@@ -1,3 +1,5 @@
+import json
+import ollama
 from src.db import db
 from src.llm import ask
 from src.memory import save_message, get_context_summary
@@ -11,10 +13,8 @@ def query_codebase(question: str, session_id: str) -> str:
 
     # Step 2 — extract keywords from question
     keywords = extract_keywords(question)
-
     # Step 3 — find relevant nodes in graph
     context = build_context(keywords)
-
     # Step 4 — send history + context + question to Ollama
     answer = ask(context, question, history)
 
@@ -26,18 +26,46 @@ def query_codebase(question: str, session_id: str) -> str:
 
 
 def extract_keywords(question: str) -> list:
-    """Extract meaningful words from the question"""
+    """Use Ollama to extract relevant code entity names from the question"""
+
+    prompt = f"""Extract code search terms from this question about a Python codebase.
+Return a JSON array of strings. Always return at least 3 terms.
+Include class names, function names, file names, and concept words.
+
+Question: "{question}"
+
+Examples:
+"How does the database connection get initialized?" -> ["Neo4jConnection", "__init__", "db", "database", "connect", "driver"]
+"What does AuthService do?" -> ["AuthService", "auth", "login", "token"]
+"Which files deal with memory?" -> ["memory", "redis", "session", "cache"]
+"What breaks if I remove neo4j?" -> ["neo4j", "Neo4jConnection", "db", "driver"]
+
+Return ONLY the JSON array, nothing else:"""
+
+    response = ollama.chat(
+        model="llama3.2",
+        messages=[{"role": "user", "content": prompt}]
+    )
+
+    raw = response["message"]["content"].strip()
+    # Strip markdown code blocks if present
+    raw = raw.replace("```json", "").replace("```", "").strip()
+
+    try:
+        keywords = json.loads(raw)
+        if isinstance(keywords, list) and len(keywords) > 0:
+            return [str(k) for k in keywords]
+    except json.JSONDecodeError:
+        pass
+
+    # Fallback
+    words = question.lower().replace("?", "").split()
     stopwords = ["what", "how", "does", "is", "the", "a", "an",
                  "in", "of", "to", "and", "or", "it", "this",
                  "do", "did", "can", "where", "which", "who",
                  "define", "defined", "about", "tell", "me",
                  "show", "list", "give", "explain"]
-
-    words = question.lower().replace("?", "").split()
-    keywords = [w for w in words if w not in stopwords]
-
-    return keywords
-
+    return [w for w in words if w not in stopwords]
 
 def build_context(keywords: list) -> str:
     """Query Neo4j graph and build context string for LLM"""
