@@ -1,0 +1,22 @@
+[
+    {
+      "question": "What does AuthService do?",
+      "ground_truth": "AuthService handles user authentication. It defines login, find_user, generate_token, and __init__ functions."
+    },
+    {
+      "question": "Which functions does login call?",
+      "ground_truth": "The login function calls find_user and generate_token."
+    },
+    {
+      "question": "How does the database connection get initialized?",
+      "ground_truth": "The database connection is initialized by the __init__ method of Neo4jConnection class in db.py. It uses GraphDatabase.driver with credentials from environment variables."
+    },
+    {
+      "question": "What does db.py depend on?",
+      "ground_truth": "db.py depends on neo4j, dotenv, and os."
+    },
+    {
+      "question": "What is defined in memory.py?",
+      "ground_truth": "memory.py defines save_message, get_history, get_context_summary, and clear_session functions."
+    }
+  ]
