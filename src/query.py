@@ -3,7 +3,7 @@ import ollama
 from src.db import db
 from src.llm import ask
 from src.memory import save_message, get_context_summary
-
+from src.vector_store import semantic_search
 
 def query_codebase(question: str, session_id: str) -> str:
     """Main entry point — takes a question, returns an answer"""
@@ -68,6 +68,64 @@ Return ONLY the JSON array, nothing else:"""
     return [w for w in words if w not in stopwords]
 
 def build_context(keywords: list) -> str:
+    """Hybrid retrieval — graph traversal + semantic search"""
+    context_parts = []
+
+    # --- Part 1: Graph traversal ---
+    for keyword in keywords:
+        results = db.query("""
+            MATCH (n)
+            WHERE toLower(n.name) CONTAINS toLower($keyword)
+               OR toLower(n.path) CONTAINS toLower($keyword)
+            OPTIONAL MATCH (n)-[r]->(related)
+            OPTIONAL MATCH (parent)-[r2]->(n)
+            RETURN labels(n) AS type,
+                   n.name AS name,
+                   n.path AS path,
+                   type(r) AS relationship,
+                   related.name AS related_name,
+                   labels(related) AS related_type,
+                   labels(parent) AS parent_type,
+                   parent.name AS parent_name,
+                   type(r2) AS parent_relationship
+            LIMIT 20
+        """, {"keyword": keyword})
+
+        for row in results:
+            node_type = row["type"][0] if row["type"] else "Unknown"
+            name = row["name"] or row["path"] or "unnamed"
+
+            line = f"{node_type}: {name}"
+
+            if row["relationship"] and row["related_name"]:
+                related_type = row["related_type"][0] if row["related_type"] else ""
+                line += f" → {row['relationship']} → {related_type}: {row['related_name']}"
+
+            if row["parent_relationship"] and row["parent_name"]:
+                parent_type = row["parent_type"][0] if row["parent_type"] else ""
+                line = f"{parent_type}: {row['parent_name']} → {row['parent_relationship']} → {line}"
+
+            context_parts.append(line)
+
+    # --- Part 2: Semantic search via Qdrant ---
+    full_query = " ".join(keywords)
+    semantic_results = semantic_search(full_query, limit=5)
+
+    for result in semantic_results:
+        if result["score"] > 0.5:
+            line = f"{result['type']}: {result['name']}"
+            if result["file"]:
+                line += f" in {result['file']}"
+            line += f" (semantic match: {result['score']:.2f})"
+            context_parts.append(line)
+
+    # Remove duplicates
+    unique_parts = list(set(context_parts))
+
+    if not unique_parts:
+        return "No relevant code found for this question."
+
+    return "\n".join(unique_parts)
     """Query Neo4j graph and build context string for LLM"""
     context_parts = []
 

@@ -1,7 +1,7 @@
 import ast
 import os
 from src.db import db
-
+from src.vector_store import embed_graph_nodes
 
 def get_called_functions(func_node):
     """Extract all function calls inside a function body"""
@@ -170,5 +170,6 @@ def ingest_directory(repo_name: str, dir_path: str):
             ingest_calls(file_path)
         except Exception as e:
             print(f"Skipped calls {file_path}: {e}")
-
+     # Pass 3 — embed all nodes into Qdrant
+    embed_graph_nodes()
     print(f"\nDone. Ingested {len(python_files)} files into graph.")
